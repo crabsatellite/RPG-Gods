@@ -66,6 +66,7 @@
   "gui.altar.right_arm": "Right Arm",
   "gui.altar.left_leg": "Left Leg",
   "gui.altar.right_leg": "Right Leg",
+  "gui.altar.root": "Root",
   "gui.altar.offset": "Offset",
   "gui.altar.name": "Name",
   "gui.altar.save": "Save",
@@ -248,5 +249,6 @@
   "structure.minecraft.village": "Village",
   "dimension.minecraft.overworld": "Overworld",
   "dimension.minecraft.the_nether": "The Nether",
-  "dimension.minecraft.the_end": "The End"
+  "dimension.minecraft.the_end": "The End",
+  "rpggods.potion.potency.multiple": "%1$s to %2$s"
 }

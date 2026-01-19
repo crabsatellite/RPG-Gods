@@ -18,6 +18,7 @@ import net.minecraft.world.item.UseAnim;
 import net.minecraft.world.level.Level;
 import net.minecraftforge.common.util.LazyOptional;
 import net.minecraftforge.network.NetworkHooks;
+import rpggods.RGRegistryHelper;
 import rpggods.RPGGods;
 import rpggods.data.favor.FavorLevel;
 import rpggods.data.favor.IFavor;
@@ -32,7 +33,7 @@ public class ScrollItem extends Item {
     @Override
     public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
         // prevent use when there are no registered deities
-        if(RPGGods.DEITY_HELPER.isEmpty()) {
+        if(RGRegistryHelper.getDeityContainers().isEmpty()) {
             return InteractionResultHolder.pass(player.getItemInHand(hand));
         }
         // begin using item (to enable texture change) and open GUI

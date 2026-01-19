@@ -31,6 +31,7 @@ import net.minecraft.world.level.pathfinder.WalkNodeEvaluator;
 import net.minecraftforge.common.util.LazyOptional;
 import net.minecraftforge.registries.ForgeRegistries;
 import org.apache.commons.lang3.tuple.ImmutablePair;
+import rpggods.RGRegistryHelper;
 import rpggods.RPGGods;
 import rpggods.data.favor.Favor;
 import rpggods.data.favor.FavorRange;
@@ -90,11 +91,11 @@ public class AffinityGoal {
                 boolean isHostile = isHostile(creature, f);
                 // log error if there are conflicts
                 if(isPassive && isHostile) {
-                    final Map<AffinityType, List<ResourceLocation>> affinityMap = RPGGods.AFFINITY.getOrDefault(id, ImmutableMap.of());
+                    final Map<AffinityType, List<ResourceLocation>> affinityMap = RGRegistryHelper.getAffinityMap(id);
                     final List<FavorRange> passivePerks = affinityMap.getOrDefault(AffinityType.PASSIVE, ImmutableList.of())
-                            .stream().map(r -> RPGGods.PERK_MAP.getOrDefault(id, Perk.EMPTY)).map(Perk::getRange).toList();
+                            .stream().map(r -> RGRegistryHelper.getPerk(r)).map(Perk::getRange).toList();
                     final List<FavorRange> hostilePerks = affinityMap.getOrDefault(AffinityType.HOSTILE, ImmutableList.of())
-                            .stream().map(r -> RPGGods.PERK_MAP.getOrDefault(id, Perk.EMPTY)).map(Perk::getRange).toList();;
+                            .stream().map(r -> RGRegistryHelper.getPerk(r)).map(Perk::getRange).toList();;
                     RPGGods.LOGGER.error("Conflicting affinity perks for " + id + " ; Hostile is " + hostilePerks + " and Passive is " + passivePerks);
                     return ImmutablePair.of(false, false);
                 }
@@ -112,9 +113,9 @@ public class AffinityGoal {
     public static boolean isPassive(final LivingEntity creature, final IFavor playerFavor) {
         final ResourceLocation id = ForgeRegistries.ENTITY_TYPES.getKey(creature.getType());
         Perk p;
-        for(ResourceLocation r : RPGGods.AFFINITY.getOrDefault(id, ImmutableMap.of()).getOrDefault(AffinityType.PASSIVE, ImmutableList.of())) {
-            p = RPGGods.PERK_MAP.get(r);
-            if(p != null && p.getRange().isInRange(playerFavor)) {
+        for(ResourceLocation r : RGRegistryHelper.getAffinityPerkIds(id, AffinityType.PASSIVE)) {
+            p = RGRegistryHelper.getPerk(r);
+            if(p != null && p != Perk.EMPTY && p.getRange().isInRange(playerFavor)) {
                 return true;
             }
         }
@@ -129,9 +130,9 @@ public class AffinityGoal {
     public static boolean isHostile(final LivingEntity creature, final IFavor playerFavor) {
         final ResourceLocation id = ForgeRegistries.ENTITY_TYPES.getKey(creature.getType());
         Perk p;
-        for(ResourceLocation r : RPGGods.AFFINITY.getOrDefault(id, ImmutableMap.of()).getOrDefault(AffinityType.HOSTILE, ImmutableList.of())) {
-            p = RPGGods.PERK_MAP.get(r);
-            if(p != null && p.getRange().isInRange(playerFavor)) {
+        for(ResourceLocation r : RGRegistryHelper.getAffinityPerkIds(id, AffinityType.HOSTILE)) {
+            p = RGRegistryHelper.getPerk(r);
+            if(p != null && p != Perk.EMPTY && p.getRange().isInRange(playerFavor)) {
                 return true;
             }
         }
@@ -207,14 +208,14 @@ public class AffinityGoal {
             final ResourceLocation id = ForgeRegistries.ENTITY_TYPES.getKey(creature.getType());
             return e -> {
                 if(e instanceof Player && e != creature.getLastHurtByMob() && !isOwnerOrTeam(creature, e)) {
-                    List<ResourceLocation> perks = RPGGods.AFFINITY.getOrDefault(id, ImmutableMap.of()).getOrDefault(AffinityType.FLEE, ImmutableList.of());
+                    List<ResourceLocation> perks = RGRegistryHelper.getAffinityPerkIds(id, AffinityType.FLEE);
                     if(perks.size() > 0) {
                         IFavor favor = RPGGods.getFavor(e).orElse(Favor.EMPTY);
                         if(favor.isEnabled()) {
                             Perk p;
                             for(ResourceLocation r : perks) {
-                                p = RPGGods.PERK_MAP.get(r);
-                                if(p != null && p.getRange().isInRange(favor)) {
+                                p = RGRegistryHelper.getPerk(r);
+                                if(p != null && p != Perk.EMPTY && p.getRange().isInRange(favor)) {
                                     return true;
                                 }
                             }

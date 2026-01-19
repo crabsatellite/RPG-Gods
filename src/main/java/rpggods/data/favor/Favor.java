@@ -13,6 +13,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraftforge.common.capabilities.Capability;
 import net.minecraftforge.common.capabilities.ICapabilitySerializable;
 import net.minecraftforge.common.util.LazyOptional;
+import rpggods.RGRegistryHelper;
 import rpggods.RPGGods;
 import rpggods.data.deity.Cooldown;
 import rpggods.data.deity.Deity;
@@ -44,7 +45,7 @@ public class Favor implements IFavor {
     public FavorLevel getFavor(final ResourceLocation deityId) {
         return favorMap.computeIfAbsent(deityId, id -> {
             final FavorLevel level = new FavorLevel(0);
-            Optional<Deity> deity = Optional.ofNullable(RPGGods.DEITY_MAP.get(deityId));
+            Optional<Deity> deity = RGRegistryHelper.getOptionalDeity(deityId);
             deity.ifPresent(d -> {
                 level.setEnabled(d.isUnlocked() && d.isEnabled());
                 level.setLevelBounds(d.getMinLevel(), d.getMaxLevel());

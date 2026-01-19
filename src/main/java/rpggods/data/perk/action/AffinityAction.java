@@ -70,4 +70,12 @@ public class AffinityAction extends PerkAction {
     public Codec<? extends PerkAction> getCodec() {
         return RGRegistry.PerkActionReg.AFFINITY.get();
     }
+
+    public EntityType<?> getEntityType() {
+        return entityType;
+    }
+
+    public AffinityType getAffinityType() {
+        return affinity;
+    }
 }

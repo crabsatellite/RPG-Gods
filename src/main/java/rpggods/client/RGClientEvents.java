@@ -13,6 +13,7 @@ import net.minecraftforge.client.event.EntityRenderersEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 import rpggods.RGRegistry;
+import rpggods.RGRegistryHelper;
 import rpggods.RPGGods;
 import rpggods.item.AltarItem;
 
@@ -60,7 +61,7 @@ public final class RGClientEvents {
         ItemProperties.register(RGRegistry.ItemReg.ALTAR.get(), new ResourceLocation("index"), (item, world, entity, i) -> {
             // determine index of altar in list
             if (altars.isEmpty() || (world != null && world.getGameTime() % 100 == 0)) {
-                altars = new ArrayList<>(RPGGods.ALTAR_MAP.keySet());
+                altars = new ArrayList<>(RGRegistryHelper.getAltarIds());
                 altars.sort(ResourceLocation::compareNamespaced);
             }
             ResourceLocation deity = ResourceLocation.tryParse(item.getOrCreateTag().getString(AltarItem.KEY_ALTAR));

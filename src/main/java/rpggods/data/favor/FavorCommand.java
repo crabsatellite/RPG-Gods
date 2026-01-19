@@ -21,6 +21,7 @@ import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
+import rpggods.RGRegistryHelper;
 import rpggods.RPGGods;
 import rpggods.data.deity.Deity;
 import rpggods.data.deity.DeityContainer;
@@ -122,20 +123,20 @@ public class FavorCommand {
 
     private static int queryDeityList(CommandSourceStack source) {
         // create list of IDs, sorted by namespace
-        List<ResourceLocation> list = new ArrayList<>(RPGGods.DEITY_MAP.keySet());
+        List<ResourceLocation> list = new ArrayList<>(RGRegistryHelper.getDeityIds());
         list.sort(ResourceLocation::compareNamespaced);
         // create string builder to add each deity
         Component builder = Component.empty();
         final String commandKey = "commands.favor.list";
         // add text to describe each deity
         for(ResourceLocation deityId : list) {
-            Optional<Deity> optional = Optional.ofNullable(RPGGods.DEITY_MAP.get(deityId));
+            Optional<Deity> optional = RGRegistryHelper.getOptionalDeity(deityId);
             optional.ifPresent(deity -> {
                 // add ID and name
                 builder.getSiblings().add(Component.literal("\n"));
                 builder.getSiblings().add(Component.literal(deity.getId().toString()).withStyle(ChatFormatting.WHITE));
                 builder.getSiblings().add(Component.literal(" - "));
-                builder.getSiblings().add(DeityContainer.createName(deity.getId()).withStyle(ChatFormatting.AQUA));
+                builder.getSiblings().add(DeityContainer.createName(deity.getId()).copy().withStyle(ChatFormatting.AQUA));
                 builder.getSiblings().add(Component.literal(" - "));
                 // add enabled/disabled
                 if(deity.isEnabled()) {

@@ -25,6 +25,7 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 import rpggods.RGRegistry;
+import rpggods.RGRegistryHelper;
 import rpggods.RPGGods;
 import rpggods.data.deity.Altar;
 import rpggods.entity.AltarEntity;
@@ -49,8 +50,8 @@ public class AltarItem extends Item {
         if(sAltarId != null && !sAltarId.isEmpty()) {
             ResourceLocation altarId = ResourceLocation.tryParse(sAltarId);
             // determine if altar is a deity
-            Optional<Altar> altar = Optional.ofNullable(RPGGods.ALTAR_MAP.get(altarId));
-            if(altar.isPresent() && altar.get().getDeity().isPresent()) {
+            Altar altar = RGRegistryHelper.getAltar(altarId);
+            if(altar != Altar.EMPTY && altar.getDeity().isPresent()) {
                 return Component.translatable("item.rpggods.altar_x",
                         Component.translatable(Altar.createTranslationKey(altarId)));
             }
@@ -66,9 +67,9 @@ public class AltarItem extends Item {
         if(!sAltarId.isEmpty()) {
             ResourceLocation altarId = ResourceLocation.tryParse(sAltarId);
             // determine if altar is not a deity but has a name
-            Optional<Altar> altar = Optional.ofNullable(RPGGods.ALTAR_MAP.get(altarId));
-            if(altar.isPresent() && !altar.get().getDeity().isPresent() && altar.get().getName().isPresent()) {
-                tooltip.add(Component.literal(altar.get().getName().get()));
+            Altar altar = RGRegistryHelper.getAltar(altarId);
+            if(altar != Altar.EMPTY && !altar.getDeity().isPresent() && altar.getName().isPresent()) {
+                tooltip.add(Component.literal(altar.getName().get()));
             }
         }
     }
@@ -76,7 +77,7 @@ public class AltarItem extends Item {
     // TODO addAltarItems to a creative tab
     public static void addAltarItems(List<ItemStack> items) {
         // add altar item stacks for each registered altar
-        List<ResourceLocation> altarList = new ArrayList<>(RPGGods.ALTAR_MAP.keySet());
+        List<ResourceLocation> altarList = new ArrayList<>(RGRegistryHelper.getAltarIds());
         altarList.sort(ResourceLocation::compareNamespaced);
         for(ResourceLocation altarId : altarList) {
             ItemStack itemStack = new ItemStack(RGRegistry.ItemReg.ALTAR.get());

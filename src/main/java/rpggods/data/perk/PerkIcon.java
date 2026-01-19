@@ -10,13 +10,13 @@ import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.world.item.ItemStack;
 import org.joml.Vector3f;
-import rpggods.data.deity.Offering;
+import rpggods.util.RGCodecUtils;
 
 public class PerkIcon {
 
     public static final PerkIcon EMPTY = new PerkIcon(ItemStack.EMPTY, 0x000, true, false);
 
-    private static final Codec<ItemStack> ITEM_OR_STACK_CODEC = Offering.ITEM_OR_STACK_CODEC;
+    private static final Codec<ItemStack> ITEM_OR_STACK_CODEC = RGCodecUtils.ITEM_OR_STACK_CODEC;
 
     public static final Codec<PerkIcon> CODEC = RecordCodecBuilder.create(instance -> instance.group(
             ITEM_OR_STACK_CODEC.optionalFieldOf("item", ItemStack.EMPTY).forGetter(PerkIcon::getItem),

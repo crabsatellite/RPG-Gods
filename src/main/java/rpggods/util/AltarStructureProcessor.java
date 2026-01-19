@@ -19,13 +19,12 @@ import net.minecraft.world.level.levelgen.structure.templatesystem.StructureProc
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructureProcessorType;
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate;
 import rpggods.RGRegistry;
-import rpggods.RPGGods;
+import rpggods.RGRegistryHelper;
 import rpggods.data.deity.Altar;
 import rpggods.entity.AltarEntity;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 public class AltarStructureProcessor extends StructureProcessor {
@@ -58,9 +57,9 @@ public class AltarStructureProcessor extends StructureProcessor {
             RandomSource random = RandomSource.create(seed);
             // create list of altars with deities
             List<Tuple<ResourceLocation, Altar>> altarList = new ArrayList<>();
-            for(Map.Entry<ResourceLocation, Altar> entry : RPGGods.ALTAR_MAP.entrySet()) {
-                if(entry.getValue().getDeity().isPresent()) {
-                    altarList.add(new Tuple<>(entry.getKey(), entry.getValue()));
+            for(Tuple<ResourceLocation, Altar> entry : RGRegistryHelper.getAltarEntries()) {
+                if(entry.getB().getDeity().isPresent()) {
+                    altarList.add(entry);
                 }
             }
             // attempt to choose random altar from list

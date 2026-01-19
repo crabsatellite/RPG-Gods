@@ -7,6 +7,7 @@
 package rpggods.entity;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.mojang.authlib.GameProfile;
@@ -61,6 +62,7 @@ import net.minecraftforge.network.NetworkHooks;
 import net.minecraftforge.network.PacketDistributor;
 import rpggods.PerkDispatcher;
 import rpggods.RGRegistry;
+import rpggods.RGRegistryHelper;
 import rpggods.RPGGods;
 import rpggods.block.AltarLightBlock;
 import rpggods.data.deity.Altar;
@@ -69,6 +71,7 @@ import rpggods.data.deity.DeityContainer;
 import rpggods.data.favor.Favor;
 import rpggods.data.favor.IFavor;
 import rpggods.data.perk.condition.PerkCondition;
+import rpggods.data.perk.condition.RitualCondition;
 import rpggods.item.AltarItem;
 import rpggods.menu.AltarContainerMenu;
 import rpggods.menu.FavorContainerMenu;
@@ -310,15 +313,15 @@ public class AltarEntity extends LivingEntity implements ContainerListener {
             // check if altar has a deity
             if(getDeity().isPresent()) {
                 // check if there are any perk conditions for "ritual"
-                DeityContainer helper = RPGGods.DEITY_HELPER.computeIfAbsent(getDeity().get(), DeityContainer::new);
-                if(!helper.perkByConditionMap.getOrDefault(PerkCondition.Type.RITUAL, ImmutableList.of()).isEmpty()) {
+                DeityContainer helper = RGRegistryHelper.getDeityContainer(getDeity().get());
+                if(!helper.getPerkByConditionMap().getOrDefault(RitualCondition.CODEC, ImmutableMap.of()).isEmpty()) {
                     // onPerformRitual
                     PerkDispatcher.performRitual(this, getDeity().get());
                 }
             }
             // attempt to place light block
             if(tickCount % 4 == 1) {
-                Altar altar = RPGGods.ALTAR_MAP.getOrDefault(getAltar(), Altar.EMPTY);
+                Altar altar = RGRegistryHelper.getAltar(getAltar());
                 int lightLevel = altar.getLightLevel();
                 // check light level
                 if(lightLevel > 0) {
@@ -422,7 +425,7 @@ public class AltarEntity extends LivingEntity implements ContainerListener {
                     ItemStack heldItem = player.getItemInHand(hand);
                     if(!heldItem.isEmpty()) {
                         // attempt to process held item as offering
-                        Optional<ItemStack> offeringResult = PerkDispatcher.onOffering(Optional.of(this), deity, player, ifavor, heldItem, false);
+                        Optional<ItemStack> offeringResult = PerkDispatcher.onOffering(Optional.of(this), deity, (ServerPlayer) player, ifavor, heldItem, false);
                         // if offering succeeded, update player inventory
                         if (offeringResult.isPresent()) {
                             player.setItemInHand(hand, offeringResult.get());
@@ -573,7 +576,7 @@ public class AltarEntity extends LivingEntity implements ContainerListener {
      */
     public void applyAltarProperties(final ResourceLocation altarId) {
         // query altar by id
-        Altar altar = RPGGods.ALTAR_MAP.getOrDefault(altarId, Altar.EMPTY);
+        Altar altar = RGRegistryHelper.getAltar(altarId);
         // apply properties
         setDeity(altar.getDeity());
         setFemale(altar.isFemale());
@@ -619,7 +622,7 @@ public class AltarEntity extends LivingEntity implements ContainerListener {
         if (altar.getDeity().isPresent() && !altar.getDeity().get().toString().isEmpty()) {
             // determine string to save deity name
             ResourceLocation deityId = altar.getDeity().get();
-            deity = Optional.ofNullable(RPGGods.DEITY_MAP.get(deityId));
+            deity = RGRegistryHelper.getOptionalDeity(deityId);
             customName = DeityContainer.createName(altarId);
             compoundTag.putString(KEY_DEITY, deityId.toString());
         }
@@ -712,7 +715,7 @@ public class AltarEntity extends LivingEntity implements ContainerListener {
         boolean enabled = true; // TODO
         ResourceLocation material = Altar.MATERIAL; // TODO
         int lightLevel = 0; // TODO
-        return new Altar(enabled, name, isFemale(), isSlim(), lightLevel, items,
+        return new Altar(enabled, name, isSlim(), lightLevel, items,
                 material, getAltarPose(), isAltarPoseLocked());
     }
 

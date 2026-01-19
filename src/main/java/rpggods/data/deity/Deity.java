@@ -23,6 +23,17 @@ import java.util.Optional;
 @Immutable
 public class Deity {
 
+    /** Empty deity used as a fallback **/
+    public static final Deity EMPTY = new Deity(
+            new ResourceLocation("rpggods", "empty"),
+            ItemStack.EMPTY,
+            Gender.OTHER,
+            false,
+            false,
+            0,
+            0
+    );
+
     public static final Codec<Deity> CODEC = RecordCodecBuilder.create(instance -> instance.group(
             ResourceLocation.CODEC.fieldOf("name").forGetter(Deity::getId),
             RGCodecUtils.ITEM_OR_STACK_CODEC.optionalFieldOf("icon", ItemStack.EMPTY).forGetter(Deity::getIcon),

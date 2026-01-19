@@ -9,10 +9,13 @@ package rpggods.data.deity;
 import com.google.common.collect.ImmutableList;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
+import net.minecraft.core.Registry;
+import net.minecraft.core.RegistryAccess;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.EntityType;
 import net.minecraftforge.registries.ForgeRegistries;
+import rpggods.RGRegistry;
 import rpggods.data.perk.condition.PerkCondition;
 import rpggods.data.perk.condition.TrueCondition;
 import rpggods.util.RGCodecUtils;
@@ -24,6 +27,21 @@ import java.util.Optional;
 
 @Immutable
 public class Sacrifice {
+
+    /** Empty sacrifice used as a fallback **/
+    public static final Sacrifice EMPTY = new Sacrifice(
+            EntityType.PIG, 0, 0, 0, 0,
+            TrueCondition.INSTANCE,
+            Optional.empty(), Optional.empty()
+    );
+
+    /**
+     * @param registryAccess the registry access
+     * @return the {@link Sacrifice} registry
+     */
+    public static Registry<Sacrifice> getRegistry(final RegistryAccess registryAccess) {
+        return registryAccess.registryOrThrow(RGRegistry.Keys.SACRIFICES);
+    }
 
     public static final Codec<Sacrifice> CODEC = RecordCodecBuilder.create(instance -> instance.group(
             ForgeRegistries.ENTITY_TYPES.getCodec().fieldOf("entity").forGetter(Sacrifice::getEntity),

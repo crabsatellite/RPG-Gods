@@ -8,6 +8,7 @@ package rpggods.data.perk;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
+import net.minecraft.core.Registry;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
@@ -32,6 +33,14 @@ public final class Perk {
     @Deprecated
     public static final Perk EMPTY = new Perk(PerkIcon.EMPTY, FalseCondition.INSTANCE,
             FavorRange.EMPTY, List.of(), 0.0F, "null", 1000L, Optional.empty());
+
+    /**
+     * @param registryAccess the registry access
+     * @return the {@link Perk} registry
+     */
+    public static Registry<Perk> getRegistry(final RegistryAccess registryAccess) {
+        return registryAccess.registryOrThrow(RGRegistry.Keys.PERKS);
+    }
 
     public static final Codec<Perk> CODEC = RecordCodecBuilder.create(instance -> instance.group(
             PerkIcon.CODEC.optionalFieldOf("icon", PerkIcon.EMPTY).forGetter(Perk::getIcon),

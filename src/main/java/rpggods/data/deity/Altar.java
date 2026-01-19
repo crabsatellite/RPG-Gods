@@ -108,6 +108,13 @@ public class Altar {
         return slim;
     }
 
+    /**
+     * @return true if this altar uses a slim (female) model
+     */
+    public boolean isFemale() {
+        return slim;
+    }
+
     public int getLightLevel() {
         return lightLevel;
     }

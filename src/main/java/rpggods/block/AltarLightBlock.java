@@ -25,7 +25,7 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
-import rpggods.RPGGods;
+import rpggods.RGRegistryHelper;
 import rpggods.data.deity.Altar;
 import rpggods.entity.AltarEntity;
 
@@ -73,7 +73,7 @@ public class AltarLightBlock extends LightBlock implements SimpleWaterloggedBloc
         // check if any altar entity has light level
         boolean hasAltar = false;
         for(AltarEntity altarEntity : list) {
-            Altar altar = RPGGods.ALTAR_MAP.getOrDefault(altarEntity.getAltar(), Altar.EMPTY);
+            Altar altar = RGRegistryHelper.getAltar(altarEntity.getAltar());
             if(altar.getLightLevel() > 0) {
                 hasAltar = true;
                 break;

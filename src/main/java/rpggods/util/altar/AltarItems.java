@@ -14,14 +14,14 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraftforge.registries.ForgeRegistries;
-import rpggods.data.deity.Offering;
+import rpggods.util.RGCodecUtils;
 
 public class AltarItems {
 
     public static final AltarItems EMPTY = new AltarItems(ItemStack.EMPTY, ItemStack.EMPTY, ItemStack.EMPTY, ItemStack.EMPTY,
             ItemStack.EMPTY, ItemStack.EMPTY, Blocks.AIR, false, false, false);
 
-    private static final Codec<ItemStack> ITEM_OR_STACK_CODEC = Offering.ITEM_OR_STACK_CODEC;
+    private static final Codec<ItemStack> ITEM_OR_STACK_CODEC = RGCodecUtils.ITEM_OR_STACK_CODEC;
 
     public static final Codec<AltarItems> CODEC = RecordCodecBuilder.create(instance -> instance.group(
             ITEM_OR_STACK_CODEC.optionalFieldOf("head", ItemStack.EMPTY).forGetter(o -> o.getItemStackFromSlot(EquipmentSlot.HEAD)),

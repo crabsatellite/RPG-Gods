@@ -11,10 +11,12 @@ import com.google.common.collect.ImmutableMap;
 import com.mojang.blaze3d.platform.Lighting;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.math.Quaternion;
-import com.mojang.math.Vector3f;
+import com.mojang.math.Axis;
+import com.mojang.serialization.Codec;
 import net.minecraft.ChatFormatting;
+import org.joml.Quaternionf;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.screens.Screen;
@@ -23,6 +25,7 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.entity.EntityRenderDispatcher;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.RegistryAccess;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.resources.ResourceLocation;
@@ -32,6 +35,8 @@ import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.registries.ForgeRegistries;
 import org.apache.commons.lang3.tuple.ImmutablePair;
+import rpggods.RGRegistry;
+import rpggods.RGRegistryHelper;
 import rpggods.RPGGods;
 import rpggods.data.deity.Altar;
 import rpggods.data.deity.Deity;
@@ -186,7 +191,7 @@ public class FavorScreen extends AbstractContainerScreen<FavorContainerMenu> {
     public FavorScreen(FavorContainerMenu screenContainer, Inventory inv, Component titleIn) {
         super(screenContainer, inv, titleIn);
         this.inventory = inv;
-        this.openTimestamp = inv.player.level.getGameTime();
+        this.openTimestamp = inv.player.level().getGameTime();
         this.imageWidth = SCREEN_WIDTH;
         this.imageHeight = SCREEN_HEIGHT;
         // add all deities to list
@@ -201,14 +206,14 @@ public class FavorScreen extends AbstractContainerScreen<FavorContainerMenu> {
 
         // Iterate over all deities using their deity helper.
         // This allows us to skip items that were invalidated by the deity helper, such as empty offerings or perks.
-        for (DeityContainer deityContainer : RPGGods.DEITY_HELPER.values()) {
+        for (DeityContainer deityContainer : RGRegistryHelper.getDeityContainers()) {
             // skip deities that are not enabled or not unlocked
-            Deity d = deityContainer.getDeity().orElse(Deity.EMPTY);
+            Deity d = deityContainer.getDeity();
             if (!d.isEnabled() || !favor.getFavor(d.getId()).isEnabled()) {
                 continue;
             }
             // add deity to list
-            deityList.add(deityContainer.id);
+            deityList.add(deityContainer.getId());
             // add entries to all lists for this deity
             offeringMap.put(d.getId(), new ArrayList<>());
             tradeMap.put(d.getId(), new ArrayList<>());
@@ -219,50 +224,44 @@ public class FavorScreen extends AbstractContainerScreen<FavorContainerMenu> {
             for (int i = favorLevel.getMin(), j = favorLevel.getMax(); i <= j; i++) {
                 perkSubMap.put(i, new ArrayList<>());
             }
-            perkMap.put(deityContainer.id, perkSubMap);
+            perkMap.put(deityContainer.getId(), perkSubMap);
             // add all offerings to map using deity helper (so we can skip offerings that were invalid)
-            for (List<ResourceLocation> entry : deityContainer.offeringMap.values()) {
-                for (ResourceLocation offeringId : entry) {
-                    Optional<Offering> optional = Optional.ofNullable(RPGGods.OFFERING_MAP.get(offeringId));
-                    optional.ifPresent(offering -> {
-                        // determine which map to use (offering or trade)
-                        Map<ResourceLocation, List<ImmutablePair<ResourceLocation, Offering>>> map = offering.getResult().isPresent() ? tradeMap : offeringMap;
-                        // add the offering to the map
-                        map.get(d.getId()).add(ImmutablePair.of(offeringId, offering));
-                    });
+            for (Map<ResourceLocation, Offering> offeringSubMap : deityContainer.getOfferings().values()) {
+                for (Map.Entry<ResourceLocation, Offering> offeringEntry : offeringSubMap.entrySet()) {
+                    ResourceLocation offeringId = offeringEntry.getKey();
+                    Offering offering = offeringEntry.getValue();
+                    // determine which map to use (offering or trade)
+                    Map<ResourceLocation, List<ImmutablePair<ResourceLocation, Offering>>> map = offering.getResult().isPresent() ? tradeMap : offeringMap;
+                    // add the offering to the map
+                    map.get(d.getId()).add(ImmutablePair.of(offeringId, offering));
                 }
             }
             // add all sacrifices to map using deity helper (so we can skip sacrifices that were invalid)
-            for (List<ResourceLocation> entry : deityContainer.sacrificeMap.values()) {
-                for (ResourceLocation sacrificeId : entry) {
-                    Optional<Sacrifice> optional = Optional.ofNullable(RPGGods.SACRIFICE_MAP.get(sacrificeId));
-                    optional.ifPresent(sacrifice -> {
-                        // add the sacrifice to the map
-                        sacrificeMap.get(d.getId()).add(ImmutablePair.of(sacrificeId, sacrifice));
-                    });
+            for (Map<ResourceLocation, Sacrifice> sacrificeSubMap : deityContainer.getSacrifices().values()) {
+                for (Map.Entry<ResourceLocation, Sacrifice> sacrificeEntry : sacrificeSubMap.entrySet()) {
+                    ResourceLocation sacrificeId = sacrificeEntry.getKey();
+                    Sacrifice sacrifice = sacrificeEntry.getValue();
+                    // add the sacrifice to the map
+                    sacrificeMap.get(d.getId()).add(ImmutablePair.of(sacrificeId, sacrifice));
                 }
             }
             // add all non-hidden perks to map using deity helper (so we can skip perks that were invalid)
-            Perk perk;
-            for (ResourceLocation entry : deityContainer.perkMap) {
-                Optional<Perk> optional = Optional.ofNullable(RPGGods.PERK_MAP.get(entry));
-                if (optional.isPresent()) {
-                    perk = optional.get();
-                    // skip hidden perks
-                    if (perk.getIcon().isHidden()) {
-                        continue;
-                    }
-                    // determine which level to place the perk
-                    int min = perk.getRange().getMinLevel();
-                    int max = perk.getRange().getMaxLevel();
-                    int unlock;
-                    if (min >= 0 && max >= 0) unlock = min;
-                    else if (min <= 0 && max <= 0) unlock = max;
-                    else unlock = Math.min(Math.abs(min), Math.abs(max));
-                    // actually add the perk to the map
-                    if (perkMap.get(d.getId()).containsKey(unlock)) {
-                        perkMap.get(d.getId()).get(unlock).add(perk);
-                    }
+            for (Map.Entry<ResourceLocation, Perk> perkEntry : deityContainer.getPerks().entrySet()) {
+                Perk perk = perkEntry.getValue();
+                // skip hidden perks
+                if (perk.getIcon().isHidden()) {
+                    continue;
+                }
+                // determine which level to place the perk
+                int min = perk.getRange().getMinLevel();
+                int max = perk.getRange().getMaxLevel();
+                int unlock;
+                if (min >= 0 && max >= 0) unlock = min;
+                else if (min <= 0 && max <= 0) unlock = max;
+                else unlock = Math.min(Math.abs(min), Math.abs(max));
+                // actually add the perk to the map
+                if (perkMap.get(d.getId()).containsKey(unlock)) {
+                    perkMap.get(d.getId()).get(unlock).add(perk);
                 }
             }
         }
@@ -284,7 +283,7 @@ public class FavorScreen extends AbstractContainerScreen<FavorContainerMenu> {
         if (deityList.size() > 0) {
             deity = screenContainer.getDeity().orElse(deityList.get(0));
             // ensure deity is enabled and unlocked
-            Deity d = RPGGods.DEITY_MAP.getOrDefault(deity, Deity.EMPTY);
+            Deity d = RGRegistryHelper.getDeity(deity);
             if (!d.isEnabled() || !favor.getFavor(deity).isEnabled()) {
                 deity = deityList.get(0);
             }
@@ -379,48 +378,40 @@ public class FavorScreen extends AbstractContainerScreen<FavorContainerMenu> {
     }
 
     @Override
-    protected void renderBg(PoseStack matrixStack, float partialTicks, int x, int y) {
+    protected void renderBg(GuiGraphics guiGraphics, float partialTicks, int x, int y) {
     }
 
     @Override
-    public void render(PoseStack matrixStack, int mouseX, int mouseY, float partialTicks) {
-        this.renderBackground(matrixStack);
+    public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTicks) {
+        this.renderBackground(guiGraphics);
         // draw background image
-        RenderSystem.setShaderTexture(0, SCREEN_TEXTURE);
-        this.blit(matrixStack, this.leftPos, this.topPos, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+        guiGraphics.blit(SCREEN_TEXTURE, this.leftPos, this.topPos, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
         // draw name
-        this.font.drawShadow(matrixStack, deityName, this.leftPos + NAME_X, this.topPos + NAME_Y, 0xFFFFFF);
+        guiGraphics.drawString(this.font, deityName, this.leftPos + NAME_X, this.topPos + NAME_Y, 0xFFFFFF, true);
         // draw favor
-        this.font.draw(matrixStack, deityFavor, this.leftPos + FAVOR_X, this.topPos + FAVOR_Y, 0xFFFFFF);
+        guiGraphics.drawString(this.font, deityFavor, this.leftPos + FAVOR_X, this.topPos + FAVOR_Y, 0xFFFFFF, false);
         // render page-specific items
         switch (this.page) {
             case SUMMARY:
-                renderSummaryPage(matrixStack, mouseX, mouseY, partialTicks);
+                renderSummaryPage(guiGraphics, mouseX, mouseY, partialTicks);
                 break;
             case OFFERINGS:
-                renderOfferingsPage(matrixStack);
+                renderOfferingsPage(guiGraphics);
                 break;
             case SACRIFICES:
-                renderSacrificesPage(matrixStack);
+                renderSacrificesPage(guiGraphics);
                 break;
             case PERKS:
                 // Perks page is rendered later
                 break;
         }
         // draw widgets
-        super.render(matrixStack, mouseX, mouseY, partialTicks);
+        super.render(guiGraphics, mouseX, mouseY, partialTicks);
         // draw perk page UI elements AFTER widgets and on top of everything
         if (this.page == Page.PERKS) {
-            renderPerksPage(matrixStack, mouseX, mouseY, partialTicks);
+            renderPerksPage(guiGraphics, mouseX, mouseY, partialTicks);
         }
-        // draw hovering text LAST
-        for (GuiEventListener w : this.children()) {
-            if (w instanceof Button b && b.visible && b.isHoveredOrFocused()) {
-                matrixStack.pushPose();
-                b.renderToolTip(matrixStack, mouseX, mouseY);
-                matrixStack.popPose();
-            }
-        }
+        // draw hovering text LAST - removed b.renderToolTip as it doesn't exist in 1.20
     }
 
     @Override
@@ -482,13 +473,12 @@ public class FavorScreen extends AbstractContainerScreen<FavorContainerMenu> {
         perkMap.clear();
     }
 
-    private void renderSummaryPage(PoseStack matrixStack, int mouseX, int mouseY, float partialTicks) {
+    private void renderSummaryPage(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTicks) {
         // draw title
         int startX = (this.width - this.font.width(deityTitle)) / 2;
-        this.font.draw(matrixStack, deityTitle, startX, this.topPos + TITLE_Y, 0xFFFFFF);
+        guiGraphics.drawString(this.font, deityTitle, startX, this.topPos + TITLE_Y, 0xFFFFFF, false);
         // draw preview pane
-        RenderSystem.setShaderTexture(0, SCREEN_WIDGETS);
-        this.blit(matrixStack, this.leftPos + PREVIEW_X, this.topPos + PREVIEW_Y, 202, 0, PREVIEW_WIDTH, PREVIEW_HEIGHT);
+        guiGraphics.blit(SCREEN_WIDGETS, this.leftPos + PREVIEW_X, this.topPos + PREVIEW_Y, 202, 0, PREVIEW_WIDTH, PREVIEW_HEIGHT);
         // prepare to draw favor amounts
         final FavorLevel level = getMenu().getFavor().getFavor(deity);
         final long curFavor = level.getFavor();
@@ -497,91 +487,86 @@ public class FavorScreen extends AbstractContainerScreen<FavorContainerMenu> {
         // draw "Patron" text
         Optional<ResourceLocation> patron = getMenu().getFavor().getPatron();
         if (patron.isPresent() && patron.get().equals(this.deity)) {
-            this.font.draw(matrixStack, Component.translatable("favor.patron")
+            guiGraphics.drawString(this.font, Component.translatable("favor.patron")
                             .withStyle(ChatFormatting.WHITE),
-                    leftPos + SUMMARY_X, startY + 1, 0xFFFFFF);
+                    leftPos + SUMMARY_X, startY + 1, 0xFFFFFF, false);
             startY += font.lineHeight * 3 / 2;
         }
         // draw favor amounts
-        this.font.draw(matrixStack, Component.translatable("favor.favor").withStyle(ChatFormatting.DARK_GRAY, ChatFormatting.ITALIC),
-                leftPos + SUMMARY_X, startY, 0xFFFFFF);
-        this.font.draw(matrixStack, Component.literal(curFavor + " / " + nextFavor)
+        guiGraphics.drawString(this.font, Component.translatable("favor.favor").withStyle(ChatFormatting.DARK_GRAY, ChatFormatting.ITALIC),
+                leftPos + SUMMARY_X, startY, 0xFFFFFF, false);
+        guiGraphics.drawString(this.font, Component.literal(curFavor + " / " + nextFavor)
                         .withStyle(ChatFormatting.DARK_PURPLE),
-                leftPos + SUMMARY_X, startY + font.lineHeight * 1 + 1, 0xFFFFFF);
-        this.font.draw(matrixStack, Component.translatable("favor.level").withStyle(ChatFormatting.DARK_GRAY, ChatFormatting.ITALIC),
-                leftPos + SUMMARY_X, startY + font.lineHeight * 5 / 2, 0xFFFFFF);
-        this.font.draw(matrixStack, Component.literal(String.valueOf(level.getLevel() + " / " + (curFavor < 0 ? level.getMin() : level.getMax()))).withStyle(ChatFormatting.DARK_PURPLE),
-                leftPos + SUMMARY_X, startY + font.lineHeight * 7 / 2 + 1, 0xFFFFFF);
-        this.font.draw(matrixStack, Component.translatable("favor.next_level").withStyle(ChatFormatting.DARK_GRAY, ChatFormatting.ITALIC),
-                leftPos + SUMMARY_X, startY + font.lineHeight * 5, 0xFFFFFF);
+                leftPos + SUMMARY_X, startY + font.lineHeight * 1 + 1, 0xFFFFFF, false);
+        guiGraphics.drawString(this.font, Component.translatable("favor.level").withStyle(ChatFormatting.DARK_GRAY, ChatFormatting.ITALIC),
+                leftPos + SUMMARY_X, startY + font.lineHeight * 5 / 2, 0xFFFFFF, false);
+        guiGraphics.drawString(this.font, Component.literal(String.valueOf(level.getLevel() + " / " + (curFavor < 0 ? level.getMin() : level.getMax()))).withStyle(ChatFormatting.DARK_PURPLE),
+                leftPos + SUMMARY_X, startY + font.lineHeight * 7 / 2 + 1, 0xFFFFFF, false);
+        guiGraphics.drawString(this.font, Component.translatable("favor.next_level").withStyle(ChatFormatting.DARK_GRAY, ChatFormatting.ITALIC),
+                leftPos + SUMMARY_X, startY + font.lineHeight * 5, 0xFFFFFF, false);
         final boolean capped = level.getLevel() == level.getMin() || level.getLevel() == level.getMax();
-        this.font.draw(matrixStack, Component.literal(capped ? "--" : String.valueOf(nextFavor - curFavor)).withStyle(ChatFormatting.DARK_PURPLE),
-                leftPos + SUMMARY_X, startY + font.lineHeight * 6 + 1, 0xFFFFFF);
+        guiGraphics.drawString(this.font, Component.literal(capped ? "--" : String.valueOf(nextFavor - curFavor)).withStyle(ChatFormatting.DARK_PURPLE),
+                leftPos + SUMMARY_X, startY + font.lineHeight * 6 + 1, 0xFFFFFF, false);
         // draw entity
-        drawEntityOnScreen(getOrCreateEntity(deity), matrixStack, this.leftPos + PREVIEW_X + PREVIEW_WIDTH / 2, this.topPos + PREVIEW_Y + PREVIEW_HEIGHT, (float) mouseX, (float) mouseY, partialTicks);
+        drawEntityOnScreen(getOrCreateEntity(deity), guiGraphics.pose(), this.leftPos + PREVIEW_X + PREVIEW_WIDTH / 2, this.topPos + PREVIEW_Y + PREVIEW_HEIGHT, (float) mouseX, (float) mouseY, partialTicks);
     }
 
-    private void renderOfferingsPage(PoseStack matrixStack) {
+    private void renderOfferingsPage(GuiGraphics guiGraphics) {
         // draw scroll background
-        RenderSystem.setShaderTexture(0, SCREEN_WIDGETS);
-        this.blit(matrixStack, this.leftPos + SCROLL_X, this.topPos + SCROLL_Y, 188, 0, SCROLL_WIDTH, SCROLL_HEIGHT);
+        guiGraphics.blit(SCREEN_WIDGETS, this.leftPos + SCROLL_X, this.topPos + SCROLL_Y, 188, 0, SCROLL_WIDTH, SCROLL_HEIGHT);
     }
 
-    private void renderSacrificesPage(PoseStack matrixStack) {
+    private void renderSacrificesPage(GuiGraphics guiGraphics) {
         // draw scroll background
-        RenderSystem.setShaderTexture(0, SCREEN_WIDGETS);
-        this.blit(matrixStack, this.leftPos + SCROLL_X, this.topPos + SCROLL_Y, 188, 0, SCROLL_WIDTH, SCROLL_HEIGHT);
+        guiGraphics.blit(SCREEN_WIDGETS, this.leftPos + SCROLL_X, this.topPos + SCROLL_Y, 188, 0, SCROLL_WIDTH, SCROLL_HEIGHT);
     }
 
-    private void renderPerksPage(PoseStack matrixStack, int mouseX, int mouseY, float partialTicks) {
-        matrixStack.pushPose();
-        matrixStack.translate(0, 0, 250);
+    private void renderPerksPage(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTicks) {
+        guiGraphics.pose().pushPose();
+        guiGraphics.pose().translate(0, 0, 250);
         // draw header frame
-        RenderSystem.setShaderTexture(0, SCREEN_TEXTURE);
-        this.blit(matrixStack, this.leftPos + 23, this.topPos + 13, 23, 13, 208, 28);
+        guiGraphics.blit(SCREEN_TEXTURE, this.leftPos + 23, this.topPos + 13, 23, 13, 208, 28);
         // draw favor level
-        renderFavorLevel(matrixStack, mouseX, mouseY, partialTicks);
+        renderFavorLevel(guiGraphics, mouseX, mouseY, partialTicks);
         // re-draw name and favor
-        this.font.drawShadow(matrixStack, deityName, this.leftPos + NAME_X, this.topPos + NAME_Y, 0xFFFFFF);
-        this.font.draw(matrixStack, deityFavor, this.leftPos + FAVOR_X, this.topPos + FAVOR_Y, 0xFFFFFF);
+        guiGraphics.drawString(this.font, deityName, this.leftPos + NAME_X, this.topPos + NAME_Y, 0xFFFFFF, true);
+        guiGraphics.drawString(this.font, deityFavor, this.leftPos + FAVOR_X, this.topPos + FAVOR_Y, 0xFFFFFF, false);
         // re-draw level buttons
         for (TextButton b : perkLevelButtonMap.values()) {
-            b.renderButton(matrixStack, mouseX, mouseY, partialTicks);
+            b.renderWidget(guiGraphics, mouseX, mouseY, partialTicks);
         }
         // draw side frames
-        RenderSystem.setShaderTexture(0, SCREEN_TEXTURE);
-        this.blit(matrixStack, this.leftPos, this.topPos, 0, 0, 24, 170);
-        this.blit(matrixStack, this.leftPos + 232, this.topPos, 232, 0, 24, 168);
+        guiGraphics.blit(SCREEN_TEXTURE, this.leftPos, this.topPos, 0, 0, 24, 170);
+        guiGraphics.blit(SCREEN_TEXTURE, this.leftPos + 232, this.topPos, 232, 0, 24, 168);
         // draw perk button tooltip
-        matrixStack.translate(0, 0, 50);
+        guiGraphics.pose().translate(0, 0, 50);
         for (PerkButton b : perkButtonMap.computeIfAbsent(deity, key -> ImmutableList.of())) {
             if (b.visible && b.isHoveredOrFocused()) {
-                b.renderPerkTooltip(matrixStack, mouseX, mouseY);
+                b.renderPerkTooltip(guiGraphics, mouseX, mouseY);
             }
         }
-        matrixStack.popPose();
+        guiGraphics.pose().popPose();
     }
 
-    private void renderFavorLevel(PoseStack matrixStack, int mouseX, int mouseY, float partialTicks) {
+    private void renderFavorLevel(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTicks) {
         // draw favor boundary
         int level = getMenu().getFavor().getFavor(deity).getLevel();
-        matrixStack.pushPose();
+        guiGraphics.pose().pushPose();
         float sizeX = Math.min(PERK_BOUNDS_WIDTH, (level + 1) * (PERK_WIDTH + PERK_SPACE_X) + this.dx - 9);
         if (sizeX > 0) {
             float scaleX = sizeX / 8.0F;
             float scaleY = 14.0F / 8.0F;
-            matrixStack.scale(scaleX, scaleY, 1);
-            matrixStack.translate((this.leftPos + PERK_BOUNDS_X) / scaleX, (this.topPos + PERK_BOUNDS_Y - 14) / scaleY, 0);
+            guiGraphics.pose().scale(scaleX, scaleY, 1);
+            guiGraphics.pose().translate((this.leftPos + PERK_BOUNDS_X) / scaleX, (this.topPos + PERK_BOUNDS_Y - 14) / scaleY, 0);
             RenderSystem.enableBlend();
-            RenderSystem.setShaderTexture(0, SCREEN_WIDGETS);
             // draw stretched texture
-            this.blit(matrixStack, 0, 0, 0, 240, 8, 8);
+            guiGraphics.blit(SCREEN_WIDGETS, 0, 0, 0, 240, 8, 8);
             // draw boundary texture
-            matrixStack.scale(1 / scaleX, 1, 1);
-            this.blit(matrixStack, Math.round(sizeX), 0, 8, 240, 8, 8);
+            guiGraphics.pose().scale(1 / scaleX, 1, 1);
+            guiGraphics.blit(SCREEN_WIDGETS, Math.round(sizeX), 0, 8, 240, 8, 8);
             RenderSystem.disableBlend();
         }
-        matrixStack.popPose();
+        guiGraphics.pose().popPose();
     }
 
     /**
@@ -793,7 +778,7 @@ public class FavorScreen extends AbstractContainerScreen<FavorContainerMenu> {
 
     public AltarEntity getOrCreateEntity(final ResourceLocation deity) {
         if (!entityMap.containsKey(deity)) {
-            AltarEntity altarEntity = AltarEntity.createAltar(inventory.player.level, BlockPos.ZERO, Direction.SOUTH, deity);
+            AltarEntity altarEntity = AltarEntity.createAltar(inventory.player.level(), BlockPos.ZERO, Direction.SOUTH, deity);
             altarEntity.setNoGravity(true);
             altarEntity.noPhysics = true;
             altarEntity.ignoreExplosion();
@@ -822,15 +807,15 @@ public class FavorScreen extends AbstractContainerScreen<FavorContainerMenu> {
         PoseStack posestack1 = new PoseStack();
         posestack1.translate(0.0D, 0.0D, 1000.0D);
         posestack1.scale(scale, scale, scale);
-        Quaternion quaternion = Vector3f.YP.rotationDegrees(rotX * -15.0F + 180.0F); // was 180.0F
-        Quaternion quaternion1 = Vector3f.XP.rotationDegrees(rotY * -15.0F);
-        Quaternion quaternion2 = Vector3f.ZP.rotationDegrees(180.0F);
+        Quaternionf quaternion = Axis.YP.rotationDegrees(rotX * -15.0F + 180.0F); // was 180.0F
+        Quaternionf quaternion1 = Axis.XP.rotationDegrees(rotY * -15.0F);
+        Quaternionf quaternion2 = Axis.ZP.rotationDegrees(180.0F);
         quaternion.mul(quaternion1);
         quaternion.mul(quaternion2);
         posestack1.mulPose(quaternion);
         Lighting.setupForEntityInInventory();
         EntityRenderDispatcher entityrenderdispatcher = Minecraft.getInstance().getEntityRenderDispatcher();
-        quaternion1.conj();
+        quaternion1.conjugate();
         entityrenderdispatcher.overrideCameraOrientation(quaternion1);
         entityrenderdispatcher.setRenderShadow(false);
         MultiBufferSource.BufferSource multibuffersource$buffersource = Minecraft.getInstance().renderBuffers().bufferSource();
@@ -847,13 +832,13 @@ public class FavorScreen extends AbstractContainerScreen<FavorContainerMenu> {
     /**
      * Renders a scroll background for a tooltip with the given position and size
      *
-     * @param matrixStack the render stack
+     * @param guiGraphics the gui graphics
      * @param startX      the x position of upper left corner
      * @param startY      the y position of upper left corner
      * @param sizeX       the width of the scroll
      * @param sizeY       the height of the scroll
      */
-    private void renderPerkTooltipBackground(PoseStack matrixStack, final float startX, final float startY,
+    private void renderPerkTooltipBackground(GuiGraphics guiGraphics, final float startX, final float startY,
                                              float sizeX, float sizeY) {
         // minimum size of tooltip
         sizeX = Math.max(42, sizeX);
@@ -870,70 +855,70 @@ public class FavorScreen extends AbstractContainerScreen<FavorContainerMenu> {
         // local x and y scale
         float scaleX = (sizeX - (cWidth * 2)) / (float) mWidth;
         float scaleY = (sizeY - (cHeight * 2)) / (float) mHeight;
+        PoseStack matrixStack = guiGraphics.pose();
         matrixStack.pushPose();
         matrixStack.translate(startX, startY, 0);
-        // prepare to render
-        RenderSystem.setShaderTexture(0, SCREEN_WIDGETS);
         // draw upper left corner
-        this.blit(matrixStack, 0, 0, u, v, cWidth, cHeight);
+        guiGraphics.blit(SCREEN_WIDGETS, 0, 0, u, v, cWidth, cHeight);
         // draw upper middle
         matrixStack.scale(scaleX, 1, 1);
         matrixStack.translate(cWidth / scaleX, 0, 0);
-        this.blit(matrixStack, 0, 0, u + cWidth, v, mWidth, cHeight);
+        guiGraphics.blit(SCREEN_WIDGETS, 0, 0, u + cWidth, v, mWidth, cHeight);
         // draw upper right
         matrixStack.scale(1 / scaleX, 1, 1);
         matrixStack.translate(mWidth * scaleX, 0, 0);
-        this.blit(matrixStack, 0, 0, u + cWidth + mWidth, v, cWidth, cHeight);
+        guiGraphics.blit(SCREEN_WIDGETS, 0, 0, u + cWidth + mWidth, v, cWidth, cHeight);
         // draw middle left
         matrixStack.translate(-(cWidth + (mWidth * scaleX)), cHeight, 0);
         matrixStack.scale(1, scaleY, 1);
-        this.blit(matrixStack, 0, 0, u, v + cHeight, cWidth, mHeight);
+        guiGraphics.blit(SCREEN_WIDGETS, 0, 0, u, v + cHeight, cWidth, mHeight);
         // draw middle
         matrixStack.translate(cWidth, 0, 0);
         matrixStack.scale(scaleX, 1, 1);
-        this.blit(matrixStack, 0, 0, u + cWidth, v + cHeight, mWidth, mHeight);
+        guiGraphics.blit(SCREEN_WIDGETS, 0, 0, u + cWidth, v + cHeight, mWidth, mHeight);
         // draw middle right
         matrixStack.scale(1 / scaleX, 1, 1);
         matrixStack.translate(mWidth * scaleX, 0, 0);
-        this.blit(matrixStack, 0, 0, u + cWidth + mWidth, v + cHeight, cWidth, mHeight);
+        guiGraphics.blit(SCREEN_WIDGETS, 0, 0, u + cWidth + mWidth, v + cHeight, cWidth, mHeight);
         // draw lower left
         matrixStack.scale(1, 1 / scaleY, 1);
         matrixStack.translate(-(cWidth + (mWidth * scaleX)), (mHeight * scaleY), 0);
-        this.blit(matrixStack, 0, 0, u, v + cHeight + mHeight, cWidth, cHeight);
+        guiGraphics.blit(SCREEN_WIDGETS, 0, 0, u, v + cHeight + mHeight, cWidth, cHeight);
         // draw lower middle
         matrixStack.scale(scaleX, 1, 1);
         matrixStack.translate(cWidth / scaleX, 0, 0);
-        this.blit(matrixStack, 0, 0, u + cWidth, v + cHeight + mHeight, mWidth, cHeight);
+        guiGraphics.blit(SCREEN_WIDGETS, 0, 0, u + cWidth, v + cHeight + mHeight, mWidth, cHeight);
         // draw upper right
         matrixStack.scale(1 / scaleX, 1, 1);
         matrixStack.translate(mWidth * scaleX, 0, 0);
-        this.blit(matrixStack, 0, 0, u + cWidth + mWidth, v + cHeight + mHeight, cWidth, cHeight);
+        guiGraphics.blit(SCREEN_WIDGETS, 0, 0, u + cWidth + mWidth, v + cHeight + mHeight, cWidth, cHeight);
         matrixStack.popPose();
     }
 
-    private void renderStrikethrough(final PoseStack matrixStack, final int x, final int y, final int width) {
+    private void renderStrikethrough(final GuiGraphics guiGraphics, final int x, final int y, final int width) {
+        PoseStack matrixStack = guiGraphics.pose();
         matrixStack.pushPose();
         float scale = (float) width / 18.0F;
         matrixStack.scale(scale, 1, 1);
-        matrixStack.translate(x / scale, y, this.itemRenderer.blitOffset + 101);
-        RenderSystem.setShaderTexture(0, SCREEN_WIDGETS);
-        this.blit(matrixStack, 0, 0, 0, 250, 18, 2);
+        matrixStack.translate(x / scale, y, 101);
+        guiGraphics.blit(SCREEN_WIDGETS, 0, 0, 0, 250, 18, 2);
         matrixStack.popPose();
     }
 
     /**
      * @param list the component list
      * @param color the text component formatting
-     * @param blacklist perk condition types to not include in the list
+     * @param blacklist perk condition codecs to not include in the list
      * @return a list of Components, one for each perk condition, with plurality and formatting
      */
-    protected List<Component> formatDescriptions(List<PerkCondition> list, ChatFormatting color, Collection<PerkCondition.Type> blacklist) {
+    protected List<Component> formatDescriptions(List<PerkCondition> list, ChatFormatting color, Collection<Codec<? extends PerkCondition>> blacklist) {
         List<Component> perkConditions = new ArrayList<>();
+        RegistryAccess registryAccess = RGRegistryHelper.getRegistryAccess();
         // add perk condition texts
         for(PerkCondition condition : list) {
             // do not show ommitted conditions
-            if(!blacklist.contains(condition.getType())) {
-                perkConditions.add(condition.getDisplayName().copy().withStyle(color));
+            if(!blacklist.contains(condition.getCodec())) {
+                perkConditions.add(condition.getDescription(registryAccess).copy().withStyle(color));
             }
         }
         // add prefix to each condition based on plurality
@@ -952,20 +937,30 @@ public class FavorScreen extends AbstractContainerScreen<FavorContainerMenu> {
         return perkConditions;
     }
 
+    /**
+     * Overload for single PerkCondition
+     * @param condition the single perk condition
+     * @param color the text component formatting
+     * @param blacklist perk condition codecs to not include in the list
+     * @return a list of Components with plurality and formatting
+     */
+    protected List<Component> formatDescriptions(PerkCondition condition, ChatFormatting color, Collection<Codec<? extends PerkCondition>> blacklist) {
+        return formatDescriptions(List.of(condition), color, blacklist);
+    }
+
     protected class PerkButton extends Button {
 
         private Perk perk;
         private List<Component> perkActions;
         private List<Component> perkConditions;
-        private static Set<PerkCondition.Type> perkConditionBlacklist = Set.of(PerkCondition.Type.RANDOM_TICK);
+        private static Set<Codec<? extends PerkCondition>> perkConditionBlacklist = Set.of(RGRegistry.PerkConditionReg.RANDOM_TICK.get());
         private Component perkChance;
         private Component perkRange;
         private boolean enabled;
         private int tooltipWidth;
 
         public PerkButton(final FavorScreen gui, final Perk perk, int x, int y) {
-            super(x, y, PERK_WIDTH, PERK_HEIGHT, Component.empty(), b -> {
-            });
+            super(x, y, PERK_WIDTH, PERK_HEIGHT, Component.empty(), b -> {}, DEFAULT_NARRATION);
             this.perkActions = new ArrayList<>();
             this.perkConditions = new ArrayList<>();
             this.setPerk(perk);
@@ -973,7 +968,7 @@ public class FavorScreen extends AbstractContainerScreen<FavorContainerMenu> {
         }
 
         @Override
-        public void renderButton(PoseStack matrixStack, int mouseX, int mouseY, float partialTicks) {
+        public void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTicks) {
             if (this.visible && this.enabled && perk != null) {
                 int blitY = 196;
                 if (perk.getIcon().isFancy()) {
@@ -981,30 +976,28 @@ public class FavorScreen extends AbstractContainerScreen<FavorContainerMenu> {
                 }
                 // draw color
                 RenderSystem.setShaderColor(perk.getIcon().getColorRed(), perk.getIcon().getColorGreen(), perk.getIcon().getColorBlue(), 1.0F);
-                RenderSystem.setShaderTexture(0, SCREEN_WIDGETS);
-                this.blit(matrixStack, this.x, this.y, 0, blitY, PERK_WIDTH, PERK_HEIGHT);
+                guiGraphics.blit(SCREEN_WIDGETS, this.getX(), this.getY(), 0, blitY, PERK_WIDTH, PERK_HEIGHT);
                 // draw bg
                 RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
-                this.blit(matrixStack, this.x, this.y, 22, blitY, PERK_WIDTH, PERK_HEIGHT);
+                guiGraphics.blit(SCREEN_WIDGETS, this.getX(), this.getY(), 22, blitY, PERK_WIDTH, PERK_HEIGHT);
                 // draw item
-                FavorScreen.this.itemRenderer.renderGuiItem(perk.getIcon().getItem(), this.x + (PERK_WIDTH - 16) / 2, this.y + (PERK_HEIGHT - 16) / 2);
+                guiGraphics.renderItem(perk.getIcon().getItem(), this.getX() + (PERK_WIDTH - 16) / 2, this.getY() + (PERK_HEIGHT - 16) / 2);
                 // draw cooldown
-                long timeElapsed = inventory.player.level.getGameTime() - openTimestamp;
+                long timeElapsed = inventory.player.level().getGameTime() - openTimestamp;
                 long cooldown = getMenu().getFavor().getPerkCooldown(this.perk.getCategory()) - timeElapsed;
                 // render cooldown texture on top of item
                 if (cooldown > 0 && perk.getCooldown() > 0) {
-                    matrixStack.pushPose();
-                    matrixStack.translate(0, 0, FavorScreen.this.itemRenderer.blitOffset + 110);
+                    guiGraphics.pose().pushPose();
+                    guiGraphics.pose().translate(0, 0, 110);
                     // determine v offset
                     int vOffset = Math.round((Mth.clamp(1.0F - (float) cooldown / (float) perk.getCooldown(), 0.0F, 1.0F)) * PERK_HEIGHT);
                     // draw cooldown
                     RenderSystem.enableBlend();
                     RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 0.5F);
-                    RenderSystem.setShaderTexture(0, SCREEN_WIDGETS);
-                    this.blit(matrixStack, this.x, this.y + vOffset, 44, blitY + vOffset, PERK_WIDTH, PERK_HEIGHT - vOffset);
+                    guiGraphics.blit(SCREEN_WIDGETS, this.getX(), this.getY() + vOffset, 44, blitY + vOffset, PERK_WIDTH, PERK_HEIGHT - vOffset);
                     RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
                     RenderSystem.disableBlend();
-                    matrixStack.popPose();
+                    guiGraphics.pose().popPose();
                 }
             }
         }
@@ -1016,20 +1009,20 @@ public class FavorScreen extends AbstractContainerScreen<FavorContainerMenu> {
             this.perkChance = Component.empty();
             this.perkRange = Component.empty();
             boolean isRandomPerk = false;
+            RegistryAccess registryAccess = RGRegistryHelper.getRegistryAccess();
             if (perk != null) {
                 // add all non-hidden perk action texts
                 for (PerkAction data : perk.getActions()) {
                     if(!data.isHidden()) {
-                        perkActions.add(data.getDisplayName().copy().withStyle(ChatFormatting.BLACK, ChatFormatting.UNDERLINE));
-                        perkActions.add(data.getDisplayDescription().copy().withStyle(ChatFormatting.BLUE));
+                        perkActions.add(data.getTitle(registryAccess).copy().withStyle(ChatFormatting.BLACK, ChatFormatting.UNDERLINE));
+                        perkActions.add(data.getDescription(registryAccess).copy().withStyle(ChatFormatting.BLUE));
                     }
                 }
-                // add perk condition texts
-                for (PerkCondition condition : perk.getCondition()) {
-                    // do not show "random tick" conditions
-                    if (condition.getType() == PerkCondition.Type.RANDOM_TICK) {
-                        isRandomPerk = true;
-                    }
+                // check perk condition
+                PerkCondition condition = perk.getCondition();
+                // do not show "random tick" conditions
+                if (condition.getCodec() == RGRegistry.PerkConditionReg.RANDOM_TICK.get()) {
+                    isRandomPerk = true;
                 }
                 this.perkConditions.addAll(formatDescriptions(perk.getCondition(), ChatFormatting.DARK_GRAY, perkConditionBlacklist));
                 // add text to display favor range
@@ -1065,16 +1058,16 @@ public class FavorScreen extends AbstractContainerScreen<FavorContainerMenu> {
         }
 
         public void move(final int moveX, final int moveY) {
-            this.x += moveX;
-            this.y += moveY;
+            this.setX(this.getX() + moveX);
+            this.setY(this.getY() + moveY);
             this.visible = this.enabled &&
-                    !(this.x > FavorScreen.this.leftPos + PERK_BOUNDS_X + PERK_BOUNDS_WIDTH
-                            || this.x < FavorScreen.this.leftPos + PERK_BOUNDS_X - this.width
-                            || this.y > FavorScreen.this.topPos + PERK_BOUNDS_Y + PERK_BOUNDS_HEIGHT
-                            || this.y < FavorScreen.this.topPos + PERK_BOUNDS_Y - this.height);
+                    !(this.getX() > FavorScreen.this.leftPos + PERK_BOUNDS_X + PERK_BOUNDS_WIDTH
+                            || this.getX() < FavorScreen.this.leftPos + PERK_BOUNDS_X - this.width
+                            || this.getY() > FavorScreen.this.topPos + PERK_BOUNDS_Y + PERK_BOUNDS_HEIGHT
+                            || this.getY() < FavorScreen.this.topPos + PERK_BOUNDS_Y - this.height);
         }
 
-        public void renderPerkTooltip(PoseStack matrixStack, final int mouseX, final int mouseY) {
+        public void renderPerkTooltip(GuiGraphics guiGraphics, final int mouseX, final int mouseY) {
             int margin = 14;
             // determine start coordinates
             int startX = mouseX + 10;
@@ -1088,35 +1081,35 @@ public class FavorScreen extends AbstractContainerScreen<FavorContainerMenu> {
             if (perkChance.equals(Component.empty())) {
                 lines--;
             }
-            renderPerkTooltipBackground(matrixStack, startX, startY, tooltipWidth + margin, lines * lineHeight + 6);
+            renderPerkTooltipBackground(guiGraphics, startX, startY, tooltipWidth + margin, lines * lineHeight + 6);
             startX += margin / 2;
             startY += 14;
             // draw perk data
             int line = 0;
             // draw action(s)
             for (Component t : perkActions) {
-                FavorScreen.this.font.draw(matrixStack, t, startX, startY + lineHeight * (line++), 0xFFFFFF);
+                guiGraphics.drawString(FavorScreen.this.font, t, startX, startY + lineHeight * (line++), 0xFFFFFF, false);
             }
             // line space
             startY += 5;
             // draw conditions
             for (Component t : perkConditions) {
-                FavorScreen.this.font.draw(matrixStack, t, startX, startY + lineHeight * (line++), 0xFFFFFF);
+                guiGraphics.drawString(FavorScreen.this.font, t, startX, startY + lineHeight * (line++), 0xFFFFFF, false);
             }
             if (!perkConditions.isEmpty()) {
                 startY += 5;
             }
             // draw chance
             if (!perkChance.equals(Component.empty())) {
-                FavorScreen.this.font.draw(matrixStack, perkChance, startX, startY + lineHeight * (line++), 0xFFFFFF);
+                guiGraphics.drawString(FavorScreen.this.font, perkChance, startX, startY + lineHeight * (line++), 0xFFFFFF, false);
                 // line space
                 startY += 5;
             }
             // draw range
             Component unlock = Component.translatable("gui.favor.perk.unlock")
                     .withStyle(ChatFormatting.BLACK);
-            FavorScreen.this.font.draw(matrixStack, unlock, startX, startY + lineHeight * (line++), 0xFFFFFF);
-            FavorScreen.this.font.draw(matrixStack, perkRange, startX, startY + lineHeight * (line++), 0xFFFFFF);
+            guiGraphics.drawString(FavorScreen.this.font, unlock, startX, startY + lineHeight * (line++), 0xFFFFFF, false);
+            guiGraphics.drawString(FavorScreen.this.font, perkRange, startX, startY + lineHeight * (line++), 0xFFFFFF, false);
         }
 
         /**
@@ -1153,31 +1146,30 @@ public class FavorScreen extends AbstractContainerScreen<FavorContainerMenu> {
         }
 
         @Override
-        public void renderButton(PoseStack matrixStack, int mouseX, int mouseY, float partialTicks) {
+        public void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTicks) {
             if (this.visible && offering != null) {
                 // draw item
-                FavorScreen.this.itemRenderer.renderGuiItem(offering.getOffering(), this.x, this.y);
-                FavorScreen.this.itemRenderer.renderGuiItemDecorations(FavorScreen.this.font, offering.getOffering(), this.x, this.y);
+                guiGraphics.renderItem(offering.getOffering(), this.getX(), this.getY());
+                guiGraphics.renderItemDecorations(FavorScreen.this.font, offering.getOffering(), this.getX(), this.getY());
                 // draw trade
                 if (hasTrade) {
                     // draw trade item
-                    FavorScreen.this.itemRenderer.renderGuiItem(offering.getResult().get(), this.x + 18 + ARROW_WIDTH, this.y);
-                    FavorScreen.this.itemRenderer.renderGuiItemDecorations(FavorScreen.this.font, offering.getResult().get(), this.x + 18 + ARROW_WIDTH, this.y);
+                    guiGraphics.renderItem(offering.getResult().get(), this.getX() + 18 + ARROW_WIDTH, this.getY());
+                    guiGraphics.renderItemDecorations(FavorScreen.this.font, offering.getResult().get(), this.getX() + 18 + ARROW_WIDTH, this.getY());
                 } else if (offering.getFunction().isPresent()) {
                     // draw question mark instead of item
-                    FavorScreen.this.font.draw(matrixStack, tradeFunctionText, this.x + 18 + ARROW_WIDTH + 4, this.y + textY, 0xFFFFFF);
+                    guiGraphics.drawString(FavorScreen.this.font, tradeFunctionText, this.getX() + 18 + ARROW_WIDTH + 4, this.getY() + textY, 0xFFFFFF, false);
                     // draw function text
-                    FavorScreen.this.font.draw(matrixStack, functionText, this.x + 18 * 3 + ARROW_WIDTH - 4, this.y + textY, 0xFFFFFF);
+                    guiGraphics.drawString(FavorScreen.this.font, functionText, this.getX() + 18 * 3 + ARROW_WIDTH - 4, this.getY() + textY, 0xFFFFFF, false);
                 }
                 // draw unlock text
-                FavorScreen.this.font.draw(matrixStack, unlockText, this.x + 18 * 2 + ARROW_WIDTH + 4, this.y + textY, 0xFFFFFF);
+                guiGraphics.drawString(FavorScreen.this.font, unlockText, this.getX() + 18 * 2 + ARROW_WIDTH + 4, this.getY() + textY, 0xFFFFFF, false);
                 // draw arrow
-                RenderSystem.setShaderTexture(0, SCREEN_WIDGETS);
-                this.blit(matrixStack, this.x + 18, this.y + textY, 113, 130, ARROW_WIDTH, ARROW_HEIGHT);
+                guiGraphics.blit(SCREEN_WIDGETS, this.getX() + 18, this.getY() + textY, 113, 130, ARROW_WIDTH, ARROW_HEIGHT);
                 // draw strikethrough
-                long timeElapsed = inventory.player.level.getGameTime() - openTimestamp;
+                long timeElapsed = inventory.player.level().getGameTime() - openTimestamp;
                 if (this.cooldown - timeElapsed > 1) {
-                    FavorScreen.this.renderStrikethrough(matrixStack, this.x, this.y + this.height / 2, this.width - 2);
+                    FavorScreen.this.renderStrikethrough(guiGraphics, this.getX(), this.getY() + this.height / 2, this.width - 2);
                 }
             }
         }
@@ -1214,23 +1206,23 @@ public class FavorScreen extends AbstractContainerScreen<FavorContainerMenu> {
         protected List<Component> getTooltip(final int mouseX, final int mouseY) {
             if (offering != null) {
                 // function tooltip
-                if (offering.getFunction().isPresent() && mouseX >= (this.x + 18 * 3 + ARROW_WIDTH - 4)) {
+                if (offering.getFunction().isPresent() && mouseX >= (this.getX() + 18 * 3 + ARROW_WIDTH - 4)) {
                     return new ArrayList<>(List.of(functionTooltip));
                 }
                 // unlock trade tooltip
-                if (mouseX >= (this.x + 18 * 2 + ARROW_WIDTH) && mouseX <= (this.x + 18 * 3 + ARROW_WIDTH - 4)) {
+                if (mouseX >= (this.getX() + 18 * 2 + ARROW_WIDTH) && mouseX <= (this.getX() + 18 * 3 + ARROW_WIDTH - 4)) {
                     return new ArrayList<>(List.of(unlockTooltip));
                 }
                 // trade result or function tooltips
-                if (offering.getResult().isPresent() && mouseX >= (this.x + 18 + ARROW_WIDTH) && mouseX <= (this.x + 18 * 2 + ARROW_WIDTH)) {
+                if (offering.getResult().isPresent() && mouseX >= (this.getX() + 18 + ARROW_WIDTH) && mouseX <= (this.getX() + 18 * 2 + ARROW_WIDTH)) {
                     if (offering.getResult().get().isEmpty() && offering.getFunction().isPresent()) {
                         return new ArrayList<>(List.of(functionTooltip));
                     }
-                    return FavorScreen.this.getTooltipFromItem(offering.getResult().get());
+                    return Screen.getTooltipFromItem(FavorScreen.this.minecraft, offering.getResult().get());
                 }
                 // item tooltip
-                if (mouseX <= (this.x + 18)) {
-                    List<Component> tooltip = new ArrayList<>(FavorScreen.this.getTooltipFromItem(offering.getOffering()));
+                if (mouseX <= (this.getX() + 18)) {
+                    List<Component> tooltip = new ArrayList<>(Screen.getTooltipFromItem(FavorScreen.this.minecraft, offering.getOffering()));
                     // attempt to add unlock range
                     if (offering.hasLevelRange()) {
                         tooltip.add(unlockTooltip.copy().withStyle(ChatFormatting.GRAY));
@@ -1258,9 +1250,7 @@ public class FavorScreen extends AbstractContainerScreen<FavorContainerMenu> {
         }
 
         public OfferingButton(final FavorScreen gui, final int index, int x, int y, final int width, final int height) {
-            super(x, y, width, height, Component.empty(), b -> {
-                    },
-                    (b, m, bx, by) -> gui.renderTooltip(m, ((OfferingButton) b).getTooltip(bx, by), Optional.empty(), bx, by, gui.font));
+            super(x, y, width, height, Component.empty(), b -> {}, DEFAULT_NARRATION);
             this.id = index;
             this.favorText = Component.empty();
             this.functionText = Component.literal(" \u2605 ").withStyle(ChatFormatting.BLUE);
@@ -1269,21 +1259,21 @@ public class FavorScreen extends AbstractContainerScreen<FavorContainerMenu> {
         }
 
         @Override
-        public void renderButton(PoseStack matrixStack, int mouseX, int mouseY, float partialTicks) {
+        public void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTicks) {
             if (this.visible && offering != null) {
                 // draw item
-                FavorScreen.this.itemRenderer.renderGuiItem(offering.getOffering(), this.x, this.y);
-                FavorScreen.this.itemRenderer.renderGuiItemDecorations(FavorScreen.this.font, offering.getOffering(), this.x, this.y);
+                guiGraphics.renderItem(offering.getOffering(), this.getX(), this.getY());
+                guiGraphics.renderItemDecorations(FavorScreen.this.font, offering.getOffering(), this.getX(), this.getY());
                 // draw favor text
-                FavorScreen.this.font.draw(matrixStack, favorText, this.x + 18, this.y + textY, 0xFFFFFF);
+                guiGraphics.drawString(FavorScreen.this.font, favorText, this.getX() + 18, this.getY() + textY, 0xFFFFFF, false);
                 // draw function text
                 if (offering != null && offering.getFunction().isPresent()) {
-                    FavorScreen.this.font.draw(matrixStack, functionText, this.x + 18 * 2 - 2, this.y + textY, 0xFFFFFF);
+                    guiGraphics.drawString(FavorScreen.this.font, functionText, this.getX() + 18 * 2 - 2, this.getY() + textY, 0xFFFFFF, false);
                 }
                 // draw strikethrough
-                long timeElapsed = inventory.player.level.getGameTime() - openTimestamp;
+                long timeElapsed = inventory.player.level().getGameTime() - openTimestamp;
                 if (!levelRange || this.cooldown - timeElapsed > 1) {
-                    FavorScreen.this.renderStrikethrough(matrixStack, this.x, this.y + this.height / 2, this.width - 4);
+                    FavorScreen.this.renderStrikethrough(guiGraphics, this.getX(), this.getY() + this.height / 2, this.width - 4);
                 }
             }
         }
@@ -1303,8 +1293,7 @@ public class FavorScreen extends AbstractContainerScreen<FavorContainerMenu> {
         protected void updateOffering(final ResourceLocation offeringId, final Offering offering) {
             this.offering = offering;
             this.cooldown = FavorScreen.this.getMenu().getFavor().getOfferingCooldown(offeringId).getCooldown();
-            ResourceLocation deity = Offering.getDeity(offeringId);
-            int level = FavorScreen.this.getMenu().getFavor().getFavor(deity).getLevel();
+            int level = FavorScreen.this.getMenu().getFavor().getFavor(FavorScreen.this.deity).getLevel();
             this.levelRange = !offering.hasLevelRange() || (level >= offering.getMinLevel() && level <= offering.getMaxLevel());
             // determine favor text
             int favorAmount = offering.getFavor();
@@ -1340,12 +1329,12 @@ public class FavorScreen extends AbstractContainerScreen<FavorContainerMenu> {
             if (null == offering) {
                 return list;
             }
-            if (offering.getFunction().isPresent() && mouseX >= (this.x + 18 * 2 - 2)) {
+            if (offering.getFunction().isPresent() && mouseX >= (this.getX() + 18 * 2 - 2)) {
                 list.add(functionTooltip);
                 return list;
             }
-            if (mouseX <= (this.x + 18)) {
-                list.addAll(FavorScreen.this.getTooltipFromItem(this.offering.getOffering()));
+            if (mouseX <= (this.getX() + 18)) {
+                list.addAll(Screen.getTooltipFromItem(FavorScreen.this.minecraft, this.offering.getOffering()));
                 if (offering.hasLevelRange()) {
                     list.add(unlockTooltip.copy().withStyle(ChatFormatting.GRAY));
                 }
@@ -1363,22 +1352,19 @@ public class FavorScreen extends AbstractContainerScreen<FavorContainerMenu> {
         protected Component favorText;
         protected Component conditionsText;
         protected List<Component> conditionsTooltip;
-        protected Set<PerkCondition.Type> perkConditionBlacklist = Set.of(PerkCondition.Type.RANDOM_TICK, PerkCondition.Type.RITUAL,
-                PerkCondition.Type.EFFECT_START, PerkCondition.Type.ENTITY_HURT_PLAYER,
-                PerkCondition.Type.ENTITY_KILLED_PLAYER, PerkCondition.Type.PLAYER_KILLED_ENTITY,
-                PerkCondition.Type.PLAYER_INTERACT_ENTITY);
+        protected Set<Codec<? extends PerkCondition>> perkConditionBlacklist = Set.of(
+                RGRegistry.PerkConditionReg.RANDOM_TICK.get(),
+                RGRegistry.PerkConditionReg.RITUAL.get(),
+                RGRegistry.PerkConditionReg.EFFECT_START.get(),
+                RGRegistry.PerkConditionReg.ENTITY_HURT_PLAYER.get(),
+                RGRegistry.PerkConditionReg.ENTITY_KILLED_PLAYER.get(),
+                RGRegistry.PerkConditionReg.ENTITY_KILLED_BY_PLAYER.get(),
+                RGRegistry.PerkConditionReg.ENTITY_INTERACT_BY_PLAYER.get());
         protected final Component functionText;
         protected Component functionTooltip;
 
         public SacrificeButton(final FavorScreen gui, final int index, int x, int y) {
-            super(x, y, SACRIFICE_WIDTH, SACRIFICE_HEIGHT, Component.empty(), b -> {
-                    },
-                    (b, m, bx, by) -> {
-                        List<Component> tooltip = ((SacrificeButton) b).getTooltip(bx, by);
-                        if (!tooltip.isEmpty()) {
-                            gui.renderTooltip(m, tooltip, Optional.empty(), bx, by, gui.font);
-                        }
-                    });
+            super(x, y, SACRIFICE_WIDTH, SACRIFICE_HEIGHT, Component.empty(), b -> {}, DEFAULT_NARRATION);
             this.id = index;
             this.entityText = Component.empty();
             this.favorText = Component.empty();
@@ -1390,24 +1376,24 @@ public class FavorScreen extends AbstractContainerScreen<FavorContainerMenu> {
         }
 
         @Override
-        public void renderButton(PoseStack matrixStack, int mouseX, int mouseY, float partialTicks) {
+        public void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTicks) {
             if (this.visible && sacrifice != null) {
                 // draw entity text
-                FavorScreen.this.font.draw(matrixStack, entityText, this.x, this.y, 0xFFFFFF);
+                guiGraphics.drawString(FavorScreen.this.font, entityText, this.getX(), this.getY(), 0xFFFFFF, false);
                 // draw favor text
-                FavorScreen.this.font.draw(matrixStack, favorText, this.x + 18 * 7, this.y, 0xFFFFFF);
+                guiGraphics.drawString(FavorScreen.this.font, favorText, this.getX() + 18 * 7, this.getY(), 0xFFFFFF, false);
                 // draw conditions icon
                 if (!conditionsTooltip.isEmpty()) {
-                    FavorScreen.this.font.draw(matrixStack, conditionsText, this.x + 18 * 8, this.y, 0xFFFFFF);
+                    guiGraphics.drawString(FavorScreen.this.font, conditionsText, this.getX() + 18 * 8, this.getY(), 0xFFFFFF, false);
                 }
                 // draw function text
                 if (sacrifice != null && sacrifice.getFunction().isPresent()) {
-                    FavorScreen.this.font.draw(matrixStack, functionText, this.x + 18 * 9, this.y, 0xFFFFFF);
+                    guiGraphics.drawString(FavorScreen.this.font, functionText, this.getX() + 18 * 9, this.getY(), 0xFFFFFF, false);
                 }
                 // draw strikethrough
-                long timeElapsed = inventory.player.level.getGameTime() - openTimestamp;
+                long timeElapsed = inventory.player.level().getGameTime() - openTimestamp;
                 if (this.cooldown - timeElapsed > 1) {
-                    FavorScreen.this.renderStrikethrough(matrixStack, this.x, this.y + this.height / 2, this.width - 2);
+                    FavorScreen.this.renderStrikethrough(guiGraphics, this.getX(), this.getY() + this.height / 2, this.width - 2);
                 }
             }
         }
@@ -1429,7 +1415,7 @@ public class FavorScreen extends AbstractContainerScreen<FavorContainerMenu> {
             this.cooldown = FavorScreen.this.getMenu().getFavor().getSacrificeCooldown(sacrificeId).getCooldown();
             this.conditionsTooltip.clear();
             // determine entity text
-            EntityType<?> entityType = ForgeRegistries.ENTITY_TYPES.getValue(sacrifice.getEntity());
+            EntityType<?> entityType = sacrifice.getEntity();
             if (entityType != null) {
                 this.entityText = Component.translatable(entityType.getDescriptionId()).withStyle(ChatFormatting.BLACK);
             }
@@ -1452,13 +1438,14 @@ public class FavorScreen extends AbstractContainerScreen<FavorContainerMenu> {
                 this.functionTooltip = Component.translatable("gui.favor.sacrifice.function.tooltip");
             }
             // determine conditions tooltip
-            if (!sacrifice.getConditions().isEmpty()) {
-                this.conditionsTooltip.addAll(formatDescriptions(sacrifice.getConditions(), ChatFormatting.WHITE, perkConditionBlacklist));
+            PerkCondition condition = sacrifice.getCondition();
+            if (condition != null) {
+                this.conditionsTooltip.addAll(formatDescriptions(condition, ChatFormatting.WHITE, perkConditionBlacklist));
             }
         }
 
         protected List<Component> getTooltip(final int mouseX, final int mouseY) {
-            if (sacrifice != null && sacrifice.getFunction().isPresent() && mouseX > (this.x + 18 * 9)) {
+            if (sacrifice != null && sacrifice.getFunction().isPresent() && mouseX > (this.getX() + 18 * 9)) {
                 // display sacrifice tooltip
                 return List.of(functionTooltip);
             }
@@ -1471,32 +1458,28 @@ public class FavorScreen extends AbstractContainerScreen<FavorContainerMenu> {
         private boolean enabled;
 
         public TextButton(final Screen gui, int x, int y, int width, int height, Component title) {
-            super(x, y, width, height, title, b -> {
-            });
+            super(x, y, width, height, title, b -> {}, DEFAULT_NARRATION);
             this.setEnabled(true);
         }
 
         public TextButton(final Screen gui, int x, int y, int width, int height, Component title, Component tooltip) {
-            super(x, y, width, height, title, b -> {
-            }, tooltip == null ? (b, m, bx, by) -> {
-            } :
-                    (b, m, bx, by) -> gui.renderTooltip(m, tooltip, bx, by));
+            super(x, y, width, height, title, b -> {}, DEFAULT_NARRATION);
             this.setEnabled(true);
         }
 
         @Override
-        public void renderButton(PoseStack matrixStack, int mouseX, int mouseY, float partialTicks) {
+        public void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTicks) {
             if (this.visible && this.enabled) {
                 // draw text
-                FavorScreen.this.font.draw(matrixStack, getMessage(), this.x, this.y, 0xFFFFFF);
+                guiGraphics.drawString(FavorScreen.this.font, getMessage(), this.getX(), this.getY(), 0xFFFFFF, false);
             }
         }
 
         public void move(final int moveX) {
-            this.x += moveX;
+            this.setX(this.getX() + moveX);
             this.visible = this.enabled &&
-                    !(this.x > FavorScreen.this.leftPos + PERK_BOUNDS_X + PERK_BOUNDS_WIDTH
-                            || this.x < FavorScreen.this.leftPos + PERK_BOUNDS_X - this.width);
+                    !(this.getX() > FavorScreen.this.leftPos + PERK_BOUNDS_X + PERK_BOUNDS_WIDTH
+                            || this.getX() < FavorScreen.this.leftPos + PERK_BOUNDS_X - this.width);
         }
 
         public void setEnabled(final boolean enabled) {
@@ -1511,24 +1494,22 @@ public class FavorScreen extends AbstractContainerScreen<FavorContainerMenu> {
         private ResourceLocation deity;
 
         public TabButton(final FavorScreen gui, final int index, final Component title, final int x, final int y) {
-            super(x, y, TAB_WIDTH, TAB_HEIGHT, title, b -> gui.updateTab(index),
-                    (b, m, bx, by) -> gui.renderTooltip(m, b.getMessage(), bx, by));
+            super(x, y, TAB_WIDTH, TAB_HEIGHT, title, b -> gui.updateTab(index), DEFAULT_NARRATION);
             this.id = index;
             updateDeity();
         }
 
         @Override
-        public void renderButton(PoseStack matrixStack, int mouseX, int mouseY, float partialTicks) {
+        public void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTicks) {
             if (this.visible) {
                 final boolean selected = FavorScreen.this.tab == id && FavorScreen.this.deity.equals(this.deity);
                 int dY = selected ? 0 : 4;
                 final int u = (id % TAB_COUNT) * TAB_WIDTH;
                 final int v = selected ? this.height : dY;
                 // draw button background
-                RenderSystem.setShaderTexture(0, SCREEN_WIDGETS);
-                this.blit(matrixStack, this.x, this.y, u, v, this.width, this.height - dY);
+                guiGraphics.blit(SCREEN_WIDGETS, this.getX(), this.getY(), u, v, this.width, this.height - dY);
                 // draw item
-                FavorScreen.this.itemRenderer.renderGuiItem(item, this.x + (this.width - 16) / 2, this.y + (this.height - 16) / 2);
+                guiGraphics.renderItem(item, this.getX() + (this.width - 16) / 2, this.getY() + (this.height - 16) / 2);
             }
         }
 
@@ -1538,7 +1519,7 @@ public class FavorScreen extends AbstractContainerScreen<FavorContainerMenu> {
                 this.visible = true;
                 this.deity = FavorScreen.this.deityList.get(deityId);
                 this.setMessage(Component.translatable(Altar.createTranslationKey(deity)));
-                this.item = RPGGods.DEITY_MAP.getOrDefault(deity, Deity.EMPTY).getIcon();
+                this.item = RGRegistryHelper.getDeity(deity).getIcon();
             } else {
                 this.visible = false;
                 this.deity = null;
@@ -1551,18 +1532,17 @@ public class FavorScreen extends AbstractContainerScreen<FavorContainerMenu> {
 
         public TabArrowButton(FavorScreen gui, int x, int y, boolean left) {
             super(x, y, ARROW_WIDTH, ARROW_HEIGHT, Component.empty(),
-                    b -> gui.updateTabGroup(gui.tabGroup + (left ? -1 : 1)));
+                    b -> gui.updateTabGroup(gui.tabGroup + (left ? -1 : 1)), DEFAULT_NARRATION);
             this.left = left;
         }
 
         @Override
-        public void renderButton(PoseStack matrixStack, int mouseX, int mouseY, float partialTicks) {
+        public void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTicks) {
             if (this.visible) {
                 final int u = left ? ARROW_WIDTH : 0;
                 final int v = 130 + (isHoveredOrFocused() ? this.height : 0);
                 // draw button
-                RenderSystem.setShaderTexture(0, SCREEN_WIDGETS);
-                this.blit(matrixStack, this.x, this.y, u, v, this.width, this.height);
+                guiGraphics.blit(SCREEN_WIDGETS, this.getX(), this.getY(), u, v, this.width, this.height);
             }
         }
 
@@ -1576,25 +1556,23 @@ public class FavorScreen extends AbstractContainerScreen<FavorContainerMenu> {
 
         public PageButton(final FavorScreen screenIn, final int x, final int y, final int u, final int v,
                           final Component title, final Component tooltip, final Page page) {
-            super(x, y, PAGE_WIDTH, PAGE_HEIGHT, title, b -> screenIn.updatePage(page),
-                    (b, m, bx, by) -> screenIn.renderTooltip(m, tooltip, bx, by));
+            super(x, y, PAGE_WIDTH, PAGE_HEIGHT, title, b -> screenIn.updatePage(page), DEFAULT_NARRATION);
             this.page = page;
             this.u = u;
             this.v = v;
         }
 
         @Override
-        public void renderButton(PoseStack matrixStack, int mouseX, int mouseY, float partialTicks) {
+        public void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTicks) {
             if (this.visible) {
                 final boolean selected = FavorScreen.this.page == this.page;
                 int dY = selected ? 0 : -4;
                 int uX = (page.ordinal() % PAGE_COUNT) * PAGE_WIDTH;
                 int vY = 64 + (selected ? this.height : 0);
-                RenderSystem.setShaderTexture(0, SCREEN_WIDGETS);
                 // draw tab
-                this.blit(matrixStack, this.x, this.y - dY, uX, vY, this.width, this.height + dY);
+                guiGraphics.blit(SCREEN_WIDGETS, this.getX(), this.getY() - dY, uX, vY, this.width, this.height + dY);
                 // draw icon
-                this.blit(matrixStack, this.x + (this.width - 18) / 2, this.y + dY + 2 + (this.height - 18) / 2, u, v, 18, 18);
+                guiGraphics.blit(SCREEN_WIDGETS, this.getX() + (this.width - 18) / 2, this.getY() + dY + 2 + (this.height - 18) / 2, u, v, 18, 18);
             }
         }
     }

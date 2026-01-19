@@ -34,18 +34,7 @@ public final class RGData {
         FavorCommand.register(event.getDispatcher());
     }
 
-    /**
-     * Used to sync datapack info when resources are reloaded
-     * @param event the reload listener event
-     **/
-    @SubscribeEvent
-    public static void onReloadListeners(final AddReloadListenerEvent event) {
-        event.addListener(RPGGods.ALTAR_JSON_MANAGER);
-        event.addListener(RPGGods.DEITY_JSON_MANAGER);
-        event.addListener(RPGGods.OFFERING_JSON_MANAGER);
-        event.addListener(RPGGods.PERK_JSON_MANAGER);
-        event.addListener(RPGGods.SACRIFICE_JSON_MANAGER);
-    }
+    // JSON Managers are no longer needed - data is loaded via Datapack Registry in RGRegistry
 
     /**
      * Used to attach Favor to players

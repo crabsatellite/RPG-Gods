@@ -12,6 +12,7 @@ import net.minecraft.nbt.ListTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Player;
 import net.minecraftforge.common.util.INBTSerializable;
+import rpggods.RGRegistryHelper;
 import rpggods.RPGGods;
 import rpggods.data.deity.Cooldown;
 import rpggods.data.deity.Offering;
@@ -177,7 +178,7 @@ public interface IFavor extends INBTSerializable<CompoundTag> {
      * @return the cooldown tracker for the {@link Offering} with the given ID
      **/
     default Cooldown getOfferingCooldown(final ResourceLocation id) {
-        return getOfferingCooldownMap().computeIfAbsent(id, r -> RPGGods.OFFERING_MAP.getOrDefault(r, Offering.EMPTY).createCooldown());
+        return getOfferingCooldownMap().computeIfAbsent(id, r -> RGRegistryHelper.getOffering(r).createCooldown());
     }
 
     /**
@@ -194,7 +195,7 @@ public interface IFavor extends INBTSerializable<CompoundTag> {
      * @return the cooldown tracker for the {@link Sacrifice} with the given ID
      **/
     default Cooldown getSacrificeCooldown(final ResourceLocation id) {
-        return getSacrificeCooldownMap().computeIfAbsent(id, r -> RPGGods.SACRIFICE_MAP.getOrDefault(r, Sacrifice.EMPTY).createCooldown());
+        return getSacrificeCooldownMap().computeIfAbsent(id, r -> RGRegistryHelper.getSacrifice(r).createCooldown());
     }
 
     /**

@@ -28,6 +28,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Centralizes all offerings, sacrifices, and perks
@@ -135,12 +136,11 @@ public class DeityContainer {
         {
             Map<Codec<? extends PerkCondition>, Map<ResourceLocation, Perk>> perkByConditionBuilder = new IdentityHashMap<>();
             for(Map.Entry<ResourceLocation, Perk> entry : this.perkMap.entrySet()) {
-                // iterate each condition in the perk and add to builder
-                for(PerkCondition condition : entry.getValue().getCondition()) {
-                    Codec<? extends PerkCondition> conditionType = condition.getCodec();
-                    perkByConditionBuilder.computeIfAbsent(conditionType, c -> new HashMap<>())
-                            .put(entry.getKey(), entry.getValue());
-                }
+                // get the single condition from the perk and add to builder
+                PerkCondition condition = entry.getValue().getCondition();
+                Codec<? extends PerkCondition> conditionType = condition.getCodec();
+                perkByConditionBuilder.computeIfAbsent(conditionType, c -> new HashMap<>())
+                        .put(entry.getKey(), entry.getValue());
             }
             // convert map values to unmodifiable lists
             perkByConditionBuilder.replaceAll((key, value) -> Collections.unmodifiableMap(value));
@@ -218,8 +218,24 @@ public class DeityContainer {
         return this.deity;
     }
 
+    /**
+     * @return an Optional containing the deity, never empty for properly constructed containers
+     */
+    public Optional<Deity> getOptionalDeity() {
+        return Optional.ofNullable(this.deity);
+    }
+
     public Component getName() {
         return this.deity.getName();
+    }
+
+    /**
+     * Creates a display name component for the given deity/altar ID
+     * @param id the ResourceLocation ID
+     * @return a translatable component
+     */
+    public static Component createName(final ResourceLocation id) {
+        return Component.translatable("deity." + id.getNamespace() + "." + id.getPath());
     }
 
     @Override

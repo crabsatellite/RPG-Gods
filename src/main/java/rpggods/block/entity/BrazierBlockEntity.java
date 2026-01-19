@@ -17,6 +17,7 @@ import net.minecraft.network.protocol.game.ClientGamePacketListener;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.ContainerHelper;
 import net.minecraft.world.Containers;
 import net.minecraft.world.entity.ai.targeting.TargetingConditions;
@@ -117,14 +118,16 @@ public class BrazierBlockEntity extends BlockEntity implements ContainerSingleIt
         // burn the offering
         final ItemStack offering = removeItem(0, 1);
         final ResourceLocation deity = altar.getDeity().get();
-        RPGGods.getFavor(player).ifPresent(favor -> {
-            Optional<ItemStack> result = PerkDispatcher.onOffering(Optional.of(altar), deity, player, favor, offering, true);
-            if(!result.isPresent()) {
-                // the offering failed, drop the item stack instead
-                Containers.dropItemStack(level, vec.x, vec.y + 0.5D, vec.z, offering);
-                level.sendParticles(ParticleTypes.ANGRY_VILLAGER, vec.x, vec.y + 0.5D, vec.z, 3, 0.0D, 0.0D, 0.0D, 0.0D);
-            }
-        });
+        if (player instanceof ServerPlayer serverPlayer) {
+            RPGGods.getFavor(player).ifPresent(favor -> {
+                Optional<ItemStack> result = PerkDispatcher.onOffering(Optional.of(altar), deity, serverPlayer, favor, offering, true);
+                if(!result.isPresent()) {
+                    // the offering failed, drop the item stack instead
+                    Containers.dropItemStack(level, vec.x, vec.y + 0.5D, vec.z, offering);
+                    level.sendParticles(ParticleTypes.ANGRY_VILLAGER, vec.x, vec.y + 0.5D, vec.z, 3, 0.0D, 0.0D, 0.0D, 0.0D);
+                }
+            });
+        }
         // update block entity
         setChanged();
     }

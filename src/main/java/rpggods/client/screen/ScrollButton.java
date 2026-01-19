@@ -7,7 +7,7 @@
 package rpggods.client.screen;
 
 import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.vertex.PoseStack;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -47,7 +47,7 @@ public class ScrollButton<T extends Screen> extends Button {
                         final ResourceLocation textureIn, final boolean isVertical, final Predicate<T> isEnabled,
                         final Consumer<ScrollButton<T>> onScrollEnd) {
         super(x, y, width, height, Component.empty(), b -> {
-        });
+        }, DEFAULT_NARRATION);
         screen = gui;
         u = uX;
         v = vY;
@@ -67,7 +67,7 @@ public class ScrollButton<T extends Screen> extends Button {
     }
 
     @Override
-    public void renderButton(PoseStack matrixStack, int mouseX, int mouseY, float partialTicks) {
+    protected void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTicks) {
         if (this.visible) {
             RenderSystem.setShaderTexture(0, texture);
             final boolean isEnabled = enabled.test(screen);
@@ -76,7 +76,7 @@ public class ScrollButton<T extends Screen> extends Button {
             final int offset = Mth.clamp((int) (scroll * this.height - this.vHeight / 2), 1, this.height - vHeight - 1);
             final int dx = vertical ? 1 : offset;
             final int dy = vertical ? offset : 1;
-            this.blit(matrixStack, this.x + dx, this.y + dy, u, v + vOffset, uWidth, vHeight);
+            guiGraphics.blit(texture, this.getX() + dx, this.getY() + dy, u, v + vOffset, uWidth, vHeight);
         }
     }
 
@@ -117,9 +117,9 @@ public class ScrollButton<T extends Screen> extends Button {
 
     private void updateScrollAmount(final double mouseX, final double mouseY) {
         if(vertical) {
-            scrollAmount = Mth.clamp((float) (mouseY - this.y) / (float) this.height, 0.0F, 1.0F);
+            scrollAmount = Mth.clamp((float) (mouseY - this.getY()) / (float) this.height, 0.0F, 1.0F);
         } else {
-            scrollAmount = Mth.clamp((float) (mouseX - this.x) / (float) this.width, 0.0F, 1.0F);
+            scrollAmount = Mth.clamp((float) (mouseX - this.getX()) / (float) this.width, 0.0F, 1.0F);
         }
     }
 

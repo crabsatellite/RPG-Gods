@@ -9,6 +9,8 @@ package rpggods.data.deity;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
+import net.minecraft.core.Registry;
+import net.minecraft.core.RegistryAccess;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtUtils;
 import net.minecraft.nbt.Tag;
@@ -16,6 +18,7 @@ import net.minecraft.nbt.TagParser;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
+import rpggods.RGRegistry;
 import rpggods.RPGGods;
 import rpggods.util.RGCodecUtils;
 
@@ -27,6 +30,21 @@ import java.util.Optional;
 public class Offering {
     
     public static final String TAG_NBT = "nbt";
+
+    /** Empty offering used as a fallback **/
+    public static final Offering EMPTY = new Offering(
+            ItemStack.EMPTY, 0, 0, 0, 0,
+            Optional.empty(), Integer.MIN_VALUE, Integer.MAX_VALUE,
+            Optional.empty(), Optional.empty()
+    );
+
+    /**
+     * @param registryAccess the registry access
+     * @return the {@link Offering} registry
+     */
+    public static Registry<Offering> getRegistry(final RegistryAccess registryAccess) {
+        return registryAccess.registryOrThrow(RGRegistry.Keys.OFFERINGS);
+    }
     
     public static final Codec<Offering> CODEC = RecordCodecBuilder.create(instance -> instance.group(
             RGCodecUtils.ITEM_OR_STACK_CODEC.optionalFieldOf("item", ItemStack.EMPTY).forGetter(Offering::getOffering),
